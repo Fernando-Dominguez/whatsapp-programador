@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programador de WhatsApp</title>
+<style>
+  :root {
+    --bg: #f4f6f5; --card: #ffffff; --text: #17201c; --muted: #66726c; --line: #e2e7e4;
+    --accent: #128c5e; --accent-soft: #e3f4ec; --danger: #c0392b; --danger-soft: #fbeae8;
+    --warn: #b7791f; --warn-soft: #fdf3e1; --chip: #eef2f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101513; --card: #19201d; --text: #e7ece9; --muted: #95a39c; --line: #2a3430;
+      --accent: #2fbf84; --accent-soft: #163327; --danger: #ef6b5e; --danger-soft: #3a1d1a;
+      --warn: #e2a53f; --warn-soft: #3a2d14; --chip: #232c28;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  .bar { max-width: 960px; margin: 0 auto; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 17px; margin: 0; flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 99px;
+    font-size: 13px; background: var(--chip); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.ok .dot { background: var(--accent); } .pill.ok { background: var(--accent-soft); }
+  .pill.wait .dot { background: var(--warn); } .pill.wait { background: var(--warn-soft); }
+  nav { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; gap: 4px; overflow-x: auto; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 12px;
+    color: var(--muted); font: inherit; cursor: pointer; white-space: nowrap; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 60px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  .hint { font-size: 13px; color: var(--muted); margin: 4px 0 0; }
+  input, select, textarea { width: 100%; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+  textarea { resize: vertical; min-height: 110px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 160px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    font: inherit; cursor: pointer; flex: 0 0 auto; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.danger { color: var(--danger); }
+  .btn.sm { padding: 5px 10px; font-size: 13px; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; min-height: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--chip); border-radius: 99px;
+    padding: 4px 6px 4px 10px; font-size: 13px; }
+  .chip button { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1; }
+  .tabs-mini { display: flex; gap: 4px; margin-bottom: 8px; }
+  .tabs-mini button { border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    padding: 5px 10px; border-radius: 99px; font: inherit; font-size: 13px; cursor: pointer; }
+  .tabs-mini button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .preview { background: var(--accent-soft); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap;
+    font-size: 14px; margin-top: 8px; }
+  .item { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-top: 1px solid var(--line); }
+  .item:first-child { border-top: 0; padding-top: 0; }
+  .item .body { flex: 1; min-width: 0; }
+  .item .title { font-weight: 600; }
+  .item .msg { color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .meta { font-size: 13px; color: var(--muted); margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--chip); white-space: nowrap; }
+  .badge.pendiente { background: var(--accent-soft); color: var(--accent); }
+  .badge.enviando, .badge.esperando-conexion { background: var(--warn-soft); color: var(--warn); }
+  .badge.error, .badge.omitido { background: var(--danger-soft); color: var(--danger); }
+  .qrbox { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
+  .qrbox img { width: 240px; height: 240px; background: #fff; padding: 8px; border-radius: 8px; }
+  .qrbox ol { margin: 0; padding-left: 20px; }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; border-top: 0; }
+  .ok { color: var(--accent); } .fail { color: var(--danger); }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text);
+    color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: .2s;
+    pointer-events: none; max-width: calc(100% - 32px); }
+  .toast.show { opacity: 1; }
+  .hidden { display: none !important; }
+  .table-wrap { overflow-x: auto; }
+  .login { position: fixed; inset: 0; background: var(--bg); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .login .card { width: 100%; max-width: 360px; margin: 0; }
+  .login .err { color: var(--danger); font-size: 14px; min-height: 20px; margin-top: 10px; }
+  .user-menu { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .admin-only.hide-role { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>Programador de WhatsApp</h1>
+    <span id="status" class="pill"><span class="dot"></span><span id="statusText">Conectando…</span></span>
+    <span class="user-menu hidden" id="userMenu"><span id="userName"></span><button class="btn sm" id="salir">Salir</button></span>
+  </div>
+  <nav id="nav">
+    <button data-tab="nuevo" class="active">Nuevo envío</button>
+    <button data-tab="envios">Programados</button>
+    <button data-tab="listas">Listas</button>
+    <button data-tab="historial">Historial</button>
+    <button data-tab="usuarios" class="admin-only">Usuarios</button>
+    <button data-tab="conexion">Conexión</button>
+  </nav>
+</header>
+
+<div class="login hidden" id="login">
+  <form class="card" id="loginForm">
+    <h2>Programador de WhatsApp</h2>
+    <label for="lgUser">Usuario</label>
+    <input id="lgUser" autocomplete="username" autocapitalize="none" required>
+    <label for="lgPass">Contraseña</label>
+    <input id="lgPass" type="password" autocomplete="current-password" required>
+    <div class="actions" style="margin-top:16px"><button class="btn primary" type="submit">Entrar</button></div>
+    <div class="err" id="lgErr"></div>
+  </form>
+</div>
+<main>
+  <!-- Aviso de conexión -->
+  <div id="connectCard" class="card hidden">
+    <h2>Vinculá tu WhatsApp</h2>
+    <div class="qrbox">
+      <img id="qr" alt="Código QR para vincular WhatsApp">
+      <ol>
+        <li>Abrí WhatsApp en tu teléfono.</li>
+        <li>Tocá <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>.</li>
+        <li>Escaneá este código.</li>
+      </ol>
+    </div>
+    <p class="hint">El código se renueva solo cada pocos segundos. La sesión queda guardada: no vas a tener que escanearlo cada vez.</p>
+  </div>
+
+  <!-- NUEVO ENVÍO -->
+  <section id="tab-nuevo">
+    <div class="card">
+      <h2 id="formTitle">Programar un mensaje</h2>
+      <label for="fTitle">Nombre interno (opcional)</label>
+      <input id="fTitle" placeholder="Ej.: Recordatorio clase del martes">
+
+      <label>Destinatarios</label>
+      <div class="tabs-mini" id="targetTabs">
+        <button data-t="phone" class="active">Persona</button>
+        <button data-t="group">Grupo</button>
+        <button data-t="list">Lista</button>
+      </div>
+      <div id="t-phone" class="row">
+        <input id="tName" placeholder="Nombre (opcional)">
+        <input id="tPhone" placeholder="Teléfono, ej. 11 2345 6789" inputmode="tel">
+        <button class="btn" id="addPhone">Agregar</button>
+      </div>
+      <div id="t-group" class="row hidden">
+        <select id="tGroup"><option value="">Conectá WhatsApp para ver tus grupos</option></select>
+        <button class="btn" id="reloadGroups" title="Actualizar grupos">↻</button>
+        <button class="btn" id="addGroup">Agregar</button>
+      </div>
+      <div id="t-list" class="row hidden">
+        <select id="tList"></select>
+        <button class="btn" id="addList">Agregar</button>
+      </div>
+      <div class="chips" id="chips"></div>
+
+      <label for="fText">Mensaje</label>
+      <textarea id="fText" placeholder="Hola {nombre}! Te recuerdo que mañana a las 19 h tenemos clase."></textarea>
+      <p class="hint">Usá <b>{nombre}</b> para el primer nombre de cada persona (o <b>{nombre_completo}</b>). En grupos, {nombre} se omite ("Hola {nombre}!" queda "Hola!"). Formato de WhatsApp: *negrita*, _cursiva_.</p>
+      <div id="preview" class="preview hidden"></div>
+
+      <label for="fFile">Adjunto (opcional)</label>
+      <input type="file" id="fFile">
+      <p class="hint" id="fileInfo">Imagen, PDF, video o audio. Con imagen o video, el mensaje va como pie.</p>
+
+      <div class="row">
+        <div>
+          <label for="fWhen">Fecha y hora</label>
+          <input type="datetime-local" id="fWhen">
+          <p class="hint" id="whenHint"></p>
+        </div>
+        <div>
+          <label for="fRepeat">Repetir</label>
+          <select id="fRepeat">
+            <option value="none">Una sola vez</option>
+            <option value="daily">Todos los días</option>
+            <option value="weekdays">De lunes a viernes</option>
+            <option value="weekly">Todas las semanas (mismo día)</option>
+            <option value="monthly">Todos los meses (mismo día)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top:18px">
+        <button class="btn primary" id="save">Programar</button>
+        <button class="btn hidden" id="cancelEdit">Cancelar edición</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRAMADOS -->
+  <section id="tab-envios" class="hidden">
+    <div class="card"><h2>Envíos programados</h2><div id="schedules"></div></div>
+  </section>
+
+  <!-- LISTAS -->
+  <section id="tab-listas" class="hidden">
+    <div class="card">
+      <h2 id="listFormTitle">Nueva lista</h2>
+      <label for="lName">Nombre de la lista</label>
+      <input id="lName" placeholder="Ej.: Diplomado – Cohorte octubre">
+      <label for="lText">Contactos (uno por línea: nombre, teléfono)</label>
+      <textarea id="lText" rows="8" placeholder="María López, 11 2345 6789&#10;Juan Pérez, +54 9 351 555 1234"></textarea>
+      <p class="hint">Podés pegar columnas copiadas de Excel o Google Sheets (nombre y teléfono). Las líneas sin teléfono se ignoran.</p>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" id="saveList">Guardar lista</button>
+        <button class="btn hidden" id="cancelList">Cancelar</button>
+      </div>
+    </div>
+    <div class="card"><h2>Tus listas</h2><div id="lists"></div></div>
+  </section>
+
+  <!-- HISTORIAL -->
+  <section id="tab-historial" class="hidden">
+    <div class="card">
+      <div class="row" style="align-items:center;margin-bottom:8px">
+        <h2 style="margin:0">Historial de envíos</h2>
+        <div style="flex:0 0 auto"><button class="btn sm" id="clearHistory">Borrar historial</button></div>
+      </div>
+      <div class="table-wrap"><div id="history"></div></div>
+    </div>
+  </section>
+
+  <!-- USUARIOS -->
+  <section id="tab-usuarios" class="hidden">
+    <div class="card">
+      <h2 id="userFormTitle">Nuevo usuario</h2>
+      <div class="row">
+        <div><label for="uUser">Usuario</label><input id="uUser" autocapitalize="none" placeholder="ej. mariela"></div>
+        <div><label for="uName">Nombre</label><input id="uName" placeholder="Mariela Kreimer"></div>
+      </div>
+      <div class="row">
+        <div><label for="uPass">Contraseña</label><input id="uPass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></div>
+        <div><label for="uRole">Rol</label>
+          <select id="uRole"><option value="usuario">Usuario (programa envíos y listas)</option><option value="admin">Administrador (además: usuarios y conexión)</option></select></div>
+      </div>
+      <p class="hint" id="uHint">Todos los usuarios envían desde el mismo WhatsApp vinculado.</p>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" id="saveUser">Crear usuario</button>
+        <button class="btn hidden" id="cancelUser">Cancelar</button>
+      </div>
+    </div>
+    <div class="card"><h2>Usuarios</h2><div id="users"></div></div>
+  </section>
+
+  <!-- CONEXIÓN -->
+  <section id="tab-conexion" class="hidden">
+    <div class="card">
+      <h2>Conexión</h2>
+      <p id="connInfo">—</p>
+      <div class="admin-only">
+        <button class="btn danger" id="logout">Desvincular este WhatsApp</button>
+        <p class="hint">Para usar otro número, desvinculá y escaneá el código nuevo.</p>
+      </div>
+    </div>
+    <div class="card" id="myPassCard">
+      <h2>Mi contraseña</h2>
+      <div class="row"><input id="myPass" type="password" autocomplete="new-password" placeholder="Nueva contraseña (mínimo 8)">
+      <button class="btn" id="saveMyPass">Cambiar</button></div>
+    </div>
+    <div class="card">
+      <h2>Buenas prácticas para evitar bloqueos</h2>
+      <ul class="hint" style="padding-left:18px;margin:0">
+        <li>Mandá mensajes a gente que te tiene agendado o que ya te escribió.</li>
+        <li>Evitá enviar el mismo texto a cientos de personas de golpe. La app ya deja unos segundos entre cada mensaje.</li>
+        <li>Personalizá con {nombre}: los mensajes idénticos masivos son los que más se marcan como spam.</li>
+        <li>Para envíos muy grandes, considerá la API oficial de WhatsApp Business.</li>
+      </ul>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (url, opts = {}) => {
+  const r = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.needLogin) { showLogin(); throw new Error('Iniciá sesión'); }
+  if (!r.ok) throw new Error(data.error || 'Error');
+  return data;
+};
+const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3500); };
+const fmt = (iso) => iso ? new Date(iso).toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+// ---------- Pestañas ----------
+let currentTab = 'nuevo';
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('hidden', s.id !== 'tab-' + tab));
+  if (tab === 'envios') loadSchedules();
+  if (tab === 'listas') loadLists();
+  if (tab === 'historial') loadHistory();
+  if (tab === 'usuarios') loadUsers();
+}
+$('#nav').onclick = (e) => { if (e.target.dataset.tab) showTab(e.target.dataset.tab); };
+
+// ---------- Estado de conexión ----------
+let waStatus = '';
+async function pollStatus() {
+  try {
+    const s = await api('/api/status');
+    const map = { conectado: ['ok', 'Conectado'], 'esperando-qr': ['wait', 'Escaneá el código QR'], conectando: ['wait', 'Conectando…'], desconectado: ['', 'Desconectado'] };
+    const [cls, text] = map[s.status] || ['', s.status];
+    $('#status').className = 'pill ' + cls;
+    $('#statusText').textContent = s.status === 'conectado' && s.me?.name ? `Conectado · ${s.me.name}` : text;
+    $('#connectCard').classList.toggle('hidden', s.status !== 'esperando-qr');
+    if (s.qr) $('#qr').src = s.qr;
+    $('#connInfo').textContent = s.status === 'conectado'
+      ? `Conectado como ${s.me?.name || ''} (${(s.me?.id || '').split(':')[0].split('@')[0]})`
+      : text;
+    if (s.status === 'conectado' && waStatus !== 'conectado') loadGroups();
+    waStatus = s.status;
+  } catch {
+    $('#status').className = 'pill'; $('#statusText').textContent = 'La app no está funcionando';
+  }
+}
+
+
+$('#logout').onclick = async () => {
+  if (!confirm('¿Desvincular este WhatsApp? Vas a tener que escanear el código de nuevo.')) return;
+  await api('/api/logout', { method: 'POST' }); toast('Desvinculado'); pollStatus();
+};
+
+// ---------- Destinatarios ----------
+let targets = [];
+let lists = [];
+function renderChips() {
+  const icon = { phone: '👤', group: '👥', list: '📋' };
+  $('#chips').innerHTML = targets.map((t, i) => {
+    const label = t.type === 'phone' ? (t.name ? `${t.name} · ${t.phone}` : t.phone) : t.name;
+    return `<span class="chip">${icon[t.type]} ${esc(label)}<button data-i="${i}" title="Quitar">×</button></span>`;
+  }).join('');
+  updatePreview();
+}
+$('#chips').onclick = (e) => { if (e.target.dataset.i) { targets.splice(+e.target.dataset.i, 1); renderChips(); } };
+$('#targetTabs').onclick = (e) => {
+  const t = e.target.dataset.t; if (!t) return;
+  document.querySelectorAll('#targetTabs button').forEach((b) => b.classList.toggle('active', b.dataset.t === t));
+  ['phone', 'group', 'list'].forEach((k) => $('#t-' + k).classList.toggle('hidden', k !== t));
+};
+$('#addPhone').onclick = () => {
+  const phone = $('#tPhone').value.trim();
+  if (phone.replace(/\D/g, '').length < 8) return toast('Escribí un teléfono válido');
+  targets.push({ type: 'phone', phone, name: $('#tName').value.trim() });
+  $('#tPhone').value = ''; $('#tName').value = ''; $('#tName').focus(); renderChips();
+};
+$('#tPhone').onkeydown = (e) => { if (e.key === 'Enter') $('#addPhone').click(); };
+$('#addGroup').onclick = () => {
+  const o = $('#tGroup').selectedOptions[0]; if (!o?.value) return;
+  if (!targets.some((t) => t.type === 'group' && t.id === o.value)) targets.push({ type: 'group', id: o.value, name: o.dataset.name });
+  renderChips();
+};
+$('#addList').onclick = () => {
+  const o = $('#tList').selectedOptions[0]; if (!o?.value) return toast('Primero creá una lista en la pestaña Listas');
+  if (!targets.some((t) => t.type === 'list' && t.id === o.value)) targets.push({ type: 'list', id: o.value, name: o.dataset.name });
+  renderChips();
+};
+async function loadGroups() {
+  try {
+    const gs = await api('/api/groups');
+    $('#tGroup').innerHTML = gs.length
+      ? gs.map((g) => `<option value="${esc(g.id)}" data-name="${esc(g.name)}">${esc(g.name)} (${g.size})</option>`).join('')
+      : '<option value="">No estás en ningún grupo</option>';
+  } catch (e) { $('#tGroup').innerHTML = `<option value="">${esc(e.message)}</option>`; }
+}
+$('#reloadGroups').onclick = loadGroups;
+
+// ---------- Vista previa ----------
+function updatePreview() {
+  const text = $('#fText').value;
+  const first = targets[0];
+  let name = '';
+  if (first?.type === 'phone') name = first.name;
+    else if (first?.type === 'list') name = lists.find((l) => l.id === first.id)?.contacts?.[0]?.name || '';
+  const full = (name || '').trim(); const fn = full.split(/\s+/)[0] || '';
+  const out = text.replace(/\{nombre_completo\}/gi, full).replace(/\{nombre\}/gi, fn).replace(/ +([,.!?])/g, '$1');
+  const show = /\{nombre/i.test(text) && text.trim();
+  $('#preview').classList.toggle('hidden', !show);
+  $('#preview').textContent = show ? `Vista previa${name ? ' para ' + full : ''}:\n\n${out}` : '';
+}
+$('#fText').oninput = updatePreview;
+
+// ---------- Formulario ----------
+let editingId = null;
+let keepAttachment = null;
+function defaultWhen() {
+  const d = new Date(Date.now() + 5 * 60000);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  return toLocalInput(d);
+}
+// "dentro de 57 minutos", "dentro de 3 h 10 min", "dentro de 2 días"
+function rel(iso) {
+  const min = Math.round((new Date(iso) - Date.now()) / 60000);
+  if (isNaN(min)) return '';
+  if (min < 0) return 'ya pasó';
+  if (min < 1) return 'en menos de un minuto';
+  if (min < 60) return `dentro de ${min} minuto${min === 1 ? '' : 's'}`;
+  if (min < 24 * 60) { const h = Math.floor(min / 60), m = min % 60; return `dentro de ${h} h${m ? ' ' + m + ' min' : ''}`; }
+  const d = Math.round(min / 1440); return `dentro de ${d} día${d === 1 ? '' : 's'}`;
+}
+function updateWhenHint() {
+  const v = $('#fWhen').value;
+  const r = v ? rel(new Date(v)) : '';
+  $('#whenHint').textContent = r ? 'Se envía ' + r : '';
+  $('#whenHint').style.color = r === 'ya pasó' ? 'var(--danger)' : '';
+}
+$('#fWhen').oninput = updateWhenHint;
+setInterval(updateWhenHint, 30000);
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function resetForm() {
+  editingId = null; keepAttachment = null; targets = [];
+  $('#fTitle').value = ''; $('#fText').value = ''; $('#fFile').value = ''; $('#fRepeat').value = 'none';
+  $('#fWhen').value = defaultWhen(); updateWhenHint();
+  $('#formTitle').textContent = 'Programar un mensaje';
+  $('#save').textContent = 'Programar'; $('#cancelEdit').classList.add('hidden');
+  $('#fileInfo').textContent = 'Imagen, PDF, video o audio. Con imagen o video, el mensaje va como pie.';
+  renderChips();
+}
+$('#cancelEdit').onclick = resetForm;
+$('#fFile').onchange = () => {
+  const f = $('#fFile').files[0];
+  if (f && f.size > 16 * 1024 * 1024) { toast('El archivo es muy grande (máx. 16 MB)'); $('#fFile').value = ''; }
+  if (f) keepAttachment = null;
+};
+const readFile = (f) => new Promise((res, rej) => {
+  const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(f);
+});
+
+$('#save').onclick = async () => {
+  const btn = $('#save'); btn.disabled = true;
+  try {
+    const f = $('#fFile').files[0];
+    const body = {
+      title: $('#fTitle').value, text: $('#fText').value, targets,
+      firstRun: new Date($('#fWhen').value).toISOString(), repeat: $('#fRepeat').value,
+      keepAttachment: !!keepAttachment,
+      attachment: f ? { name: f.name, mimetype: f.type, data: await readFile(f) } : undefined,
+    };
+    const s = editingId
+      ? await api('/api/schedules/' + editingId, { method: 'PUT', body })
+      : await api('/api/schedules', { method: 'POST', body });
+    toast(`Listo: se enviará el ${fmt(s.nextRun)} (${rel(s.nextRun)})`);
+    resetForm(); showTab('envios');
+  } catch (e) { toast(e.message); }
+  btn.disabled = false;
+};
+
+// ---------- Programados ----------
+let schedules = [];
+const statusLabel = { pendiente: 'Programado', enviando: 'Enviando…', enviado: 'Enviado', error: 'Con errores',
+  omitido: 'Omitido', pausado: 'Pausado', 'esperando-conexion': 'Esperando conexión' };
+async function loadSchedules() {
+  schedules = await api('/api/schedules');
+  $('#schedules').innerHTML = schedules.length ? schedules.map((s) => {
+    const dest = s.targets.map((t) => t.type === 'phone' ? (t.name || t.phone) : t.name).join(', ');
+    return `<div class="item">
+      <div class="body">
+        <div class="title">${esc(s.title || s.text.split('\n')[0].slice(0, 60) || s.attachment?.name || 'Mensaje')}
+          <span class="badge ${s.status}">${statusLabel[s.status] || s.status}</span></div>
+        ${s.title ? `<div class="msg">${esc(s.text)}</div>` : ''}
+        <div class="meta">
+          <span>📅 ${s.nextRun ? 'Próximo: ' + fmt(s.nextRun) + ' · ' + rel(s.nextRun) : 'Sin próximos envíos'}</span>
+          <span>🔁 ${esc(s.repeatLabel)}</span>
+          <span title="${esc(dest)}">👤 ${s.recipientsCount} destinatario${s.recipientsCount === 1 ? '' : 's'}</span>
+          ${s.attachment ? `<span>📎 ${esc(s.attachment.name)}</span>` : ''}
+          ${s.createdBy ? `<span>✍ ${esc(s.updatedBy || s.createdBy)}</span>` : ''}
+          ${s.lastRun ? `<span>Último: ${fmt(s.lastRun)} (${s.lastResult.ok} ok${s.lastResult.fail ? ', ' + s.lastResult.fail + ' con error' : ''})</span>` : ''}
+        </div>
+        <div class="actions">
+          <button class="btn sm" data-a="edit" data-id="${s.id}">Editar</button>
+          <button class="btn sm" data-a="toggle" data-id="${s.id}">${s.active ? 'Pausar' : 'Reactivar'}</button>
+          <button class="btn sm" data-a="send" data-id="${s.id}">Enviar ahora</button>
+          <button class="btn sm danger" data-a="del" data-id="${s.id}">Eliminar</button>
+        </div>
+      </div></div>`;
+  }).join('') : '<div class="empty">Todavía no programaste ningún mensaje.</div>';
+}
+$('#schedules').onclick = async (e) => {
+  const { a, id } = e.target.dataset; if (!a) return;
+  const s = schedules.find((x) => x.id === id);
+  try {
+    if (a === 'del') { if (!confirm('¿Eliminar este envío?')) return; await api('/api/schedules/' + id, { method: 'DELETE' }); }
+    if (a === 'toggle') await api(`/api/schedules/${id}/toggle`, { method: 'POST' });
+    if (a === 'send') {
+      if (!confirm(`¿Enviar ahora a ${s.recipientsCount} destinatario(s)? (No cambia la programación)`)) return;
+      await api(`/api/schedules/${id}/send-now`, { method: 'POST' }); toast('Enviando… mirá el Historial');
+    }
+    if (a === 'edit') {
+      editingId = id; targets = JSON.parse(JSON.stringify(s.targets));
+      $('#fTitle').value = s.title || ''; $('#fText').value = s.text; $('#fRepeat').value = s.repeat;
+      $('#fWhen').value = toLocalInput(new Date(s.nextRun || s.firstRun)); updateWhenHint(); $('#fFile').value = '';
+      keepAttachment = s.attachment;
+      $('#fileInfo').textContent = s.attachment ? `Adjunto actual: ${s.attachment.name} (elegí otro archivo para reemplazarlo)` : 'Imagen, PDF, video o audio.';
+      $('#formTitle').textContent = 'Editar envío'; $('#save').textContent = 'Guardar cambios';
+      $('#cancelEdit').classList.remove('hidden'); renderChips(); showTab('nuevo'); return;
+    }
+    loadSchedules();
+  } catch (err) { toast(err.message); }
+};
+setInterval(() => { if (currentTab === 'envios') loadSchedules(); if (currentTab === 'historial') loadHistory(); }, 5000);
+
+// ---------- Listas ----------
+let editingList = null;
+async function loadLists() {
+  lists = await api('/api/lists');
+  $('#tList').innerHTML = lists.length
+    ? lists.map((l) => `<option value="${l.id}" data-name="${esc(l.name)}">${esc(l.name)} (${l.contacts.length})</option>`).join('')
+    : '<option value="">Todavía no hay listas</option>';
+  $('#lists').innerHTML = lists.length ? lists.map((l) => `<div class="item"><div class="body">
+      <div class="title">${esc(l.name)}</div>
+      <div class="meta"><span>${l.contacts.length} contacto${l.contacts.length === 1 ? '' : 's'}</span></div>
+      <div class="msg">${esc(l.contacts.slice(0, 6).map((c) => c.name || c.phone).join(', '))}${l.contacts.length > 6 ? '…' : ''}</div>
+      <div class="actions"><button class="btn sm" data-a="edit" data-id="${l.id}">Editar</button>
+      <button class="btn sm danger" data-a="del" data-id="${l.id}">Eliminar</button></div></div></div>`).join('')
+    : '<div class="empty">Creá una lista para enviar el mismo mensaje a varias personas.</div>';
+}
+$('#lists').onclick = async (e) => {
+  const { a, id } = e.target.dataset; if (!a) return;
+  const l = lists.find((x) => x.id === id);
+  if (a === 'del') { if (!confirm(`¿Eliminar la lista "${l.name}"?`)) return; await api('/api/lists/' + id, { method: 'DELETE' }); loadLists(); }
+  if (a === 'edit') { editingList = id; $('#lName').value = l.name; $('#lText').value = l.text;
+    $('#listFormTitle').textContent = 'Editar lista'; $('#cancelList').classList.remove('hidden'); window.scrollTo(0, 0); }
+};
+function resetList() { editingList = null; $('#lName').value = ''; $('#lText').value = ''; $('#listFormTitle').textContent = 'Nueva lista'; $('#cancelList').classList.add('hidden'); }
+$('#cancelList').onclick = resetList;
+$('#saveList').onclick = async () => {
+  try {
+    const body = { name: $('#lName').value, text: $('#lText').value };
+    const l = editingList ? await api('/api/lists/' + editingList, { method: 'PUT', body }) : await api('/api/lists', { method: 'POST', body });
+    toast(`Lista guardada con ${l.contacts.length} contactos`); resetList(); loadLists();
+  } catch (e) { toast(e.message); }
+};
+
+// ---------- Historial ----------
+async function loadHistory() {
+  const h = await api('/api/history');
+  $('#history').innerHTML = h.length ? `<table><thead><tr><th>Cuándo</th><th>Envío</th><th>Para</th><th>Resultado</th></tr></thead><tbody>${
+    h.map((x) => `<tr><td style="white-space:nowrap">${fmt(x.at)}</td><td>${esc(x.title || '—')}${x.by ? ` <span class="hint">· ${esc(x.by)}</span>` : ''}${x.manual ? ' <span class="badge">manual</span>' : ''}</td>
+      <td>${esc(x.to)}</td><td class="${x.ok ? 'ok' : 'fail'}">${x.ok ? '✔ Enviado' : '✖ ' + esc(x.error)}</td></tr>`).join('')
+  }</tbody></table>` : '<div class="empty">Todavía no se envió nada.</div>';
+}
+$('#clearHistory').onclick = async () => { if (confirm('¿Borrar todo el historial?')) { await api('/api/history', { method: 'DELETE' }); loadHistory(); } };
+
+// ---------- Sesión y usuarios ----------
+let me = null;
+let booted = false;
+function showLogin() {
+  $('#login').classList.remove('hidden');
+  setTimeout(() => $('#lgUser').focus(), 50);
+}
+$('#loginForm').onsubmit = async (e) => {
+  e.preventDefault(); $('#lgErr').textContent = '';
+  try {
+    await api('/api/login', { method: 'POST', body: { username: $('#lgUser').value, password: $('#lgPass').value } });
+    $('#lgPass').value = ''; $('#login').classList.add('hidden'); boot();
+  } catch (err) { $('#lgErr').textContent = err.message; }
+};
+$('#salir').onclick = async () => { await api('/api/salir', { method: 'POST' }).catch(() => {}); location.reload(); };
+$('#saveMyPass').onclick = async () => {
+  try { await api('/api/me/password', { method: 'POST', body: { password: $('#myPass').value } }); $('#myPass').value = ''; toast('Contraseña cambiada'); location.reload(); }
+  catch (e) { toast(e.message); }
+};
+
+let users = [];
+let editingUser = null;
+async function loadUsers() {
+  users = await api('/api/users');
+  $('#users').innerHTML = users.length ? users.map((u) => `<div class="item"><div class="body">
+      <div class="title">${esc(u.name)} <span class="badge">${u.role === 'admin' ? 'Administrador' : 'Usuario'}</span></div>
+      <div class="meta"><span>@${esc(u.username)}</span>${u.id === me.id ? '<span>(vos)</span>' : ''}</div>
+      <div class="actions"><button class="btn sm" data-a="edit" data-id="${u.id}">Editar</button>
+      ${u.id === me.id ? '' : `<button class="btn sm danger" data-a="del" data-id="${u.id}">Eliminar</button>`}</div></div></div>`).join('')
+    : '<div class="empty">Todavía no hay usuarios. Mientras no crees uno, el panel solo se puede abrir desde esta misma compu.</div>';
+}
+function resetUserForm() {
+  editingUser = null; ['#uUser', '#uName', '#uPass'].forEach((k) => ($(k).value = ''));
+  $('#uUser').disabled = false; $('#uRole').value = 'usuario';
+  $('#userFormTitle').textContent = 'Nuevo usuario'; $('#saveUser').textContent = 'Crear usuario';
+  $('#uPass').placeholder = 'Mínimo 8 caracteres'; $('#cancelUser').classList.add('hidden');
+}
+$('#cancelUser').onclick = resetUserForm;
+$('#users').onclick = async (e) => {
+  const { a, id } = e.target.dataset; if (!a) return;
+  const u = users.find((x) => x.id === id);
+  if (a === 'del') { if (!confirm(`¿Eliminar a ${u.name}?`)) return; try { await api('/api/users/' + id, { method: 'DELETE' }); loadUsers(); } catch (err) { toast(err.message); } }
+  if (a === 'edit') {
+    editingUser = id; $('#uUser').value = u.username; $('#uUser').disabled = true; $('#uName').value = u.name; $('#uRole').value = u.role; $('#uPass').value = '';
+    $('#uPass').placeholder = 'Dejala vacía para no cambiarla';
+    $('#userFormTitle').textContent = 'Editar usuario'; $('#saveUser').textContent = 'Guardar'; $('#cancelUser').classList.remove('hidden'); window.scrollTo(0, 0);
+  }
+};
+$('#saveUser').onclick = async () => {
+  try {
+    const body = { username: $('#uUser').value, name: $('#uName').value, password: $('#uPass').value, role: $('#uRole').value };
+    if (editingUser) await api('/api/users/' + editingUser, { method: 'PUT', body });
+    else await api('/api/users', { method: 'POST', body });
+    toast('Usuario guardado'); const wasLocal = me.local; resetUserForm(); loadUsers();
+    if (wasLocal) { toast('Usuario creado. Ahora ingresá con él.'); setTimeout(() => location.reload(), 1200); }
+  } catch (e) { toast(e.message); }
+};
+
+async function boot() {
+  try { me = await api('/api/me'); } catch { return; }
+  $('#userMenu').classList.toggle('hidden', !!me.local);
+  $('#userName').textContent = me.name;
+  $('#myPassCard').classList.toggle('hidden', !!me.local);
+  document.querySelectorAll('.admin-only').forEach((el) => el.classList.toggle('hide-role', me.role !== 'admin'));
+  if (!booted) { booted = true; setInterval(pollStatus, 3000); }
+  pollStatus(); resetForm(); loadLists(); loadGroups();
+}
+boot();
+</script>
+</body>
+</html>
