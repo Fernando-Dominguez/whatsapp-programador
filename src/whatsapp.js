@@ -1,4 +1,4 @@
-// Conexión a WhatsApp con tu propio número (como WhatsApp Web), vía Baileys.
+// Conexiones a WhatsApp (como WhatsApp Web) vía Baileys: una sesión por usuario.
 import fs from 'node:fs';
 import path from 'node:path';
 import makeWASocket, {
@@ -10,89 +10,164 @@ import QRCode from 'qrcode';
 import pino from 'pino';
 import { DATA_DIR } from './db.js';
 
-const AUTH_DIR = path.join(DATA_DIR, 'sesion-whatsapp');
+const SESSIONS_DIR = path.join(DATA_DIR, 'sesiones');
+const LEGACY_DIR = path.join(DATA_DIR, 'sesion-whatsapp'); // versión anterior (un solo WhatsApp)
+// Si alguien pidió el QR y no lo escanea, se deja de generar después de este tiempo.
+const QR_IDLE_MS = 3 * 60 * 1000;
 
-export const wa = {
-  status: 'desconectado', // desconectado | conectando | esperando-qr | conectado
-  qr: null, // data URL del QR
-  me: null, // { id, name }
-  sock: null,
-};
+fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
-let starting = false;
-let retryTimer = null;
+/** userId -> { status, qr, me, sock, starting, retry, lastSeen } */
+const sessions = new Map();
 
-export async function startWhatsApp() {
-  if (starting) return;
-  starting = true;
-  clearTimeout(retryTimer);
+const authDir = (userId) => path.join(SESSIONS_DIR, String(userId).replace(/[^\w-]/g, '_'));
+const hasCreds = (userId) => fs.existsSync(path.join(authDir(userId), 'creds.json'));
+
+function getSession(userId) {
+  if (!sessions.has(userId)) sessions.set(userId, { status: 'desconectado', qr: null, me: null, sock: null });
+  return sessions.get(userId);
+}
+
+let baileysVersion;
+async function version() {
+  if (baileysVersion) return baileysVersion;
   try {
-    wa.status = 'conectando';
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-    let version;
-    try {
-      ({ version } = await fetchLatestBaileysVersion());
-    } catch {
-      /* usa la versión por defecto */
-    }
+    ({ version: baileysVersion } = await fetchLatestBaileysVersion());
+  } catch {
+    /* usa la versión por defecto */
+  }
+  return baileysVersion;
+}
 
+/**
+ * Pasa una sesión ya vinculada al usuario indicado: la de la versión anterior
+ * (un solo WhatsApp) o la del uso local sin usuarios.
+ */
+export function migrateLegacySession(userId) {
+  if (hasCreds(userId)) return false;
+  for (const from of [LEGACY_DIR, userId === 'local' ? null : authDir('local')]) {
+    if (!from || !fs.existsSync(path.join(from, 'creds.json'))) continue;
+    const wasRunning = from === authDir('local') && sessions.get('local')?.sock;
+    if (from === authDir('local')) { stopSocket('local'); sessions.delete('local'); }
+    fs.rmSync(authDir(userId), { recursive: true, force: true });
+    fs.renameSync(from, authDir(userId));
+    console.log(`Sesión de WhatsApp existente asignada al usuario ${userId}`);
+    if (wasRunning) startSession(userId);
+    return true;
+  }
+  return false;
+}
+
+export async function startSession(userId) {
+  const s = getSession(userId);
+  if (s.starting || s.sock) return;
+  s.starting = true;
+  clearTimeout(s.retry);
+  try {
+    s.status = 'conectando';
+    const { state, saveCreds } = await useMultiFileAuthState(authDir(userId));
     const sock = makeWASocket({
       auth: state,
-      version,
+      version: await version(),
       logger: pino({ level: 'silent' }),
       browser: ['Programador WhatsApp', 'Chrome', '1.0'],
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
-    wa.sock = sock;
-
+    s.sock = sock;
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', async (u) => {
+      if (s.sock !== sock) return; // evento de una conexión vieja
       if (u.qr) {
-        wa.status = 'esperando-qr';
-        wa.qr = await QRCode.toDataURL(u.qr, { margin: 1, width: 300 });
+        // Nadie está mirando el QR: no seguir generándolo
+        if (!hasCreds(userId) && Date.now() - (s.lastSeen || 0) > QR_IDLE_MS) {
+          stopSocket(userId);
+          s.status = 'desconectado';
+          return;
+        }
+        s.status = 'esperando-qr';
+        s.qr = await QRCode.toDataURL(u.qr, { margin: 1, width: 300 });
       }
       if (u.connection === 'open') {
-        wa.status = 'conectado';
-        wa.qr = null;
-        wa.me = { id: sock.user?.id, name: sock.user?.name || sock.user?.verifiedName || '' };
-        console.log(`✔ WhatsApp conectado (${wa.me.id})`);
+        s.status = 'conectado';
+        s.qr = null;
+        s.me = { id: sock.user?.id, name: sock.user?.name || sock.user?.verifiedName || '' };
+        console.log(`✔ WhatsApp conectado (usuario ${userId}: ${s.me.id})`);
       }
       if (u.connection === 'close') {
         const code = u.lastDisconnect?.error?.output?.statusCode;
-        wa.sock = null;
-        wa.me = null;
+        s.sock = null;
+        s.me = null;
+        s.qr = null;
         if (code === DisconnectReason.loggedOut) {
-          console.log('Sesión cerrada desde el teléfono. Hay que escanear el QR de nuevo.');
-          fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-          wa.status = 'desconectado';
-          retryTimer = setTimeout(startWhatsApp, 1000);
+          console.log(`Usuario ${userId}: sesión cerrada desde el teléfono.`);
+          fs.rmSync(authDir(userId), { recursive: true, force: true });
+          s.status = 'desconectado';
+        } else if (s.stopped) {
+          s.status = 'desconectado';
         } else {
-          wa.status = 'conectando';
-          retryTimer = setTimeout(startWhatsApp, code === DisconnectReason.restartRequired ? 500 : 5000);
+          s.status = 'conectando';
+          s.retry = setTimeout(() => startSession(userId), code === DisconnectReason.restartRequired ? 500 : 5000);
         }
       }
     });
+    s.stopped = false;
   } catch (e) {
-    console.error('Error iniciando WhatsApp:', e.message);
-    wa.status = 'desconectado';
-    retryTimer = setTimeout(startWhatsApp, 10000);
+    console.error(`Error iniciando WhatsApp (usuario ${userId}):`, e.message);
+    s.status = 'desconectado';
+    s.retry = setTimeout(() => startSession(userId), 10000);
   } finally {
-    starting = false;
+    s.starting = false;
   }
 }
 
-export async function logoutWhatsApp() {
+function stopSocket(userId) {
+  const s = getSession(userId);
+  clearTimeout(s.retry);
+  s.stopped = true;
   try {
-    await wa.sock?.logout();
+    s.sock?.end(undefined);
   } catch {
     /* ignorar */
   }
-  fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-  wa.sock = null;
-  wa.me = null;
-  wa.status = 'desconectado';
-  setTimeout(startWhatsApp, 1000);
+  s.sock = null;
+  s.qr = null;
+  s.me = null;
+}
+
+/** Estado para el panel. Pedirlo "despierta" la sesión para que aparezca el QR. */
+export function sessionStatus(userId) {
+  const s = getSession(userId);
+  s.lastSeen = Date.now();
+  if (!s.sock && !s.starting && s.status !== 'conectando' && process.env.SIN_WHATSAPP !== '1') startSession(userId);
+  return { status: s.status, qr: s.qr, me: s.me };
+}
+
+export const isConnected = (userId) => getSession(userId).status === 'conectado';
+
+export async function logoutSession(userId) {
+  const s = getSession(userId);
+  try {
+    await s.sock?.logout();
+  } catch {
+    /* ignorar */
+  }
+  stopSocket(userId);
+  fs.rmSync(authDir(userId), { recursive: true, force: true });
+  s.status = 'desconectado';
+}
+
+/** Al borrar un usuario: corta y elimina su sesión. */
+export async function removeSession(userId) {
+  await logoutSession(userId);
+  sessions.delete(userId);
+}
+
+/** Al arrancar: reconecta a todos los usuarios que ya tenían su WhatsApp vinculado. */
+export function startSavedSessions() {
+  for (const dir of fs.readdirSync(SESSIONS_DIR)) {
+    if (fs.existsSync(path.join(SESSIONS_DIR, dir, 'creds.json'))) startSession(dir);
+  }
 }
 
 /**
@@ -129,43 +204,49 @@ export function normalizePhone(raw) {
 
 const jidCache = new Map();
 
+function connectedSock(userId) {
+  const s = getSession(userId);
+  if (!s.sock || s.status !== 'conectado') throw new Error('WhatsApp no está conectado');
+  return s.sock;
+}
+
 /** Devuelve el JID real de WhatsApp para un número, o lanza error si no tiene WhatsApp. */
-export async function resolvePhoneJid(phone) {
+export async function resolvePhoneJid(userId, phone) {
   const num = normalizePhone(phone);
   if (num.length < 8) throw new Error(`Número inválido: ${phone}`);
   if (jidCache.has(num)) return jidCache.get(num);
-  const res = await wa.sock.onWhatsApp(num);
+  const res = await connectedSock(userId).onWhatsApp(num);
   const hit = res?.find((r) => r.exists);
   if (!hit) throw new Error(`El número ${num} no tiene WhatsApp`);
   jidCache.set(num, hit.jid);
   return hit.jid;
 }
 
-export async function listGroups() {
-  if (!wa.sock || wa.status !== 'conectado') throw new Error('WhatsApp no está conectado');
-  const groups = await wa.sock.groupFetchAllParticipating();
+export async function listGroups(userId) {
+  const groups = await connectedSock(userId).groupFetchAllParticipating();
   return Object.values(groups)
     .map((g) => ({ id: g.id, name: g.subject, size: g.participants?.length || 0 }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 }
 
-/** Envía texto (y opcionalmente un archivo adjunto) a un JID. */
-export async function sendTo(jid, text, attachment) {
-  if (!wa.sock || wa.status !== 'conectado') throw new Error('WhatsApp no está conectado');
-  if (!attachment) return wa.sock.sendMessage(jid, { text });
+/** Envía texto (y opcionalmente un archivo adjunto) a un JID desde el WhatsApp del usuario. */
+export async function sendTo(userId, jid, text, attachment) {
+  const sock = connectedSock(userId);
+  if (!attachment) return sock.sendMessage(jid, { text });
   const buffer = fs.readFileSync(attachment.path);
   const mt = attachment.mimetype || 'application/octet-stream';
-  if (mt.startsWith('image/')) return wa.sock.sendMessage(jid, { image: buffer, caption: text || undefined });
-  if (mt.startsWith('video/')) return wa.sock.sendMessage(jid, { video: buffer, caption: text || undefined });
+  if (mt.startsWith('image/')) return sock.sendMessage(jid, { image: buffer, caption: text || undefined });
+  if (mt.startsWith('video/')) return sock.sendMessage(jid, { video: buffer, caption: text || undefined });
   if (mt.startsWith('audio/')) {
-    await wa.sock.sendMessage(jid, { audio: buffer, mimetype: mt });
-    if (text) await wa.sock.sendMessage(jid, { text });
+    await sock.sendMessage(jid, { audio: buffer, mimetype: mt });
+    if (text) await sock.sendMessage(jid, { text });
     return;
   }
-  return wa.sock.sendMessage(jid, {
+  return sock.sendMessage(jid, {
     document: buffer,
     mimetype: mt,
     fileName: attachment.name,
     caption: text || undefined,
   });
 }
+export const _sessionsForTests = sessions;

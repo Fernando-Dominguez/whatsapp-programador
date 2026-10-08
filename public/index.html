@@ -244,9 +244,9 @@
       <div class="row">
         <div><label for="uPass">Contraseña</label><input id="uPass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></div>
         <div><label for="uRole">Rol</label>
-          <select id="uRole"><option value="usuario">Usuario (programa envíos y listas)</option><option value="admin">Administrador (además: usuarios y conexión)</option></select></div>
+          <select id="uRole"><option value="usuario">Usuario (programa envíos y listas)</option><option value="admin">Administrador (además: gestiona usuarios)</option></select></div>
       </div>
-      <p class="hint" id="uHint">Todos los usuarios envían desde el mismo WhatsApp vinculado.</p>
+      <p class="hint" id="uHint">Cada usuario entra con su usuario, vincula su propio WhatsApp escaneando el QR y tiene sus propios envíos, listas e historial.</p>
       <div class="actions" style="margin-top:12px">
         <button class="btn primary" id="saveUser">Crear usuario</button>
         <button class="btn hidden" id="cancelUser">Cancelar</button>
@@ -260,10 +260,8 @@
     <div class="card">
       <h2>Conexión</h2>
       <p id="connInfo">—</p>
-      <div class="admin-only">
-        <button class="btn danger" id="logout">Desvincular este WhatsApp</button>
-        <p class="hint">Para usar otro número, desvinculá y escaneá el código nuevo.</p>
-      </div>
+      <button class="btn danger" id="logout">Desvincular mi WhatsApp</button>
+      <p class="hint">Cada usuario vincula su propio WhatsApp. Para usar otro número, desvinculá y escaneá el código nuevo.</p>
     </div>
     <div class="card" id="myPassCard">
       <h2>Mi contraseña</h2>
@@ -324,6 +322,9 @@ async function pollStatus() {
     $('#connInfo').textContent = s.status === 'conectado'
       ? `Conectado como ${s.me?.name || ''} (${(s.me?.id || '').split(':')[0].split('@')[0]})`
       : text;
+    $('#logout').classList.toggle('hidden', s.status !== 'conectado');
+    if (s.status !== 'conectado') $('#connInfo').textContent = s.status === 'esperando-qr'
+      ? 'Escaneá el código QR que aparece arriba con tu teléfono.' : text + '. En unos segundos aparece el código QR para vincular tu WhatsApp.';
     if (s.status === 'conectado' && waStatus !== 'conectado') loadGroups();
     waStatus = s.status;
   } catch {
@@ -333,7 +334,7 @@ async function pollStatus() {
 
 
 $('#logout').onclick = async () => {
-  if (!confirm('¿Desvincular este WhatsApp? Vas a tener que escanear el código de nuevo.')) return;
+  if (!confirm('¿Desvincular tu WhatsApp? Tus envíos programados no van a salir hasta que lo vuelvas a vincular.')) return;
   await api('/api/logout', { method: 'POST' }); toast('Desvinculado'); pollStatus();
 };
 
@@ -585,7 +586,8 @@ let editingUser = null;
 async function loadUsers() {
   users = await api('/api/users');
   $('#users').innerHTML = users.length ? users.map((u) => `<div class="item"><div class="body">
-      <div class="title">${esc(u.name)} <span class="badge">${u.role === 'admin' ? 'Administrador' : 'Usuario'}</span></div>
+      <div class="title">${esc(u.name)} <span class="badge">${u.role === 'admin' ? 'Administrador' : 'Usuario'}</span>
+        <span class="badge ${u.whatsapp ? 'pendiente' : ''}">${u.whatsapp ? 'WhatsApp conectado' : 'WhatsApp sin vincular'}</span></div>
       <div class="meta"><span>@${esc(u.username)}</span>${u.id === me.id ? '<span>(vos)</span>' : ''}</div>
       <div class="actions"><button class="btn sm" data-a="edit" data-id="${u.id}">Editar</button>
       ${u.id === me.id ? '' : `<button class="btn sm danger" data-a="del" data-id="${u.id}">Eliminar</button>`}</div></div></div>`).join('')
@@ -601,7 +603,7 @@ $('#cancelUser').onclick = resetUserForm;
 $('#users').onclick = async (e) => {
   const { a, id } = e.target.dataset; if (!a) return;
   const u = users.find((x) => x.id === id);
-  if (a === 'del') { if (!confirm(`¿Eliminar a ${u.name}?`)) return; try { await api('/api/users/' + id, { method: 'DELETE' }); loadUsers(); } catch (err) { toast(err.message); } }
+  if (a === 'del') { if (!confirm(`¿Eliminar a ${u.name}? Se desvincula su WhatsApp y se borran sus envíos y listas.`)) return; try { await api('/api/users/' + id, { method: 'DELETE' }); loadUsers(); } catch (err) { toast(err.message); } }
   if (a === 'edit') {
     editingUser = id; $('#uUser').value = u.username; $('#uUser').disabled = true; $('#uName').value = u.name; $('#uRole').value = u.role; $('#uPass').value = '';
     $('#uPass').placeholder = 'Dejala vacía para no cambiarla';

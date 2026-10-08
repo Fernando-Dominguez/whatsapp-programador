@@ -1,6 +1,6 @@
 // Programador: revisa cada 15 segundos si hay envíos pendientes y los ejecuta.
 import db, { save, addHistory } from './db.js';
-import { wa, resolvePhoneJid, sendTo } from './whatsapp.js';
+import { isConnected, resolvePhoneJid, sendTo } from './whatsapp.js';
 
 // Si la compu estuvo apagada y un envío se atrasó más que esto, no se manda (se marca "omitido").
 const MAX_LATE_MIN = Number(process.env.MAX_ATRASO_MINUTOS || 120);
@@ -60,13 +60,13 @@ export function firstNext(s) {
 }
 
 /** Expande los destinos (personas, grupos, listas) en destinatarios individuales. */
-export function expandTargets(targets) {
+export function expandTargets(targets, ownerId) {
   const out = [];
   for (const t of targets || []) {
     if (t.type === 'phone') out.push({ kind: 'phone', phone: t.phone, name: t.name || '' });
     else if (t.type === 'group') out.push({ kind: 'group', jid: t.id, name: t.name || 'grupo' });
     else if (t.type === 'list') {
-      const list = db.lists.find((l) => l.id === t.id);
+      const list = db.lists.find((l) => l.id === t.id && (!ownerId || l.ownerId === ownerId));
       for (const c of list?.contacts || []) out.push({ kind: 'phone', phone: c.phone, name: c.name || '' });
     }
   }
@@ -83,13 +83,14 @@ export function personalize(text, name) {
     .replace(/(^|\n)[ ,]+/g, '$1');
 }
 
-let running = false;
+const runningOwners = new Set();
 
 export async function runSchedule(s, { manual = false, by } = {}) {
   by = by || s.updatedBy || s.createdBy;
+  const owner = s.ownerId;
   s.status = 'enviando';
   save();
-  const recipients = expandTargets(s.targets);
+  const recipients = expandTargets(s.targets, owner);
   const seen = new Set();
   let ok = 0;
   let fail = 0;
@@ -97,17 +98,17 @@ export async function runSchedule(s, { manual = false, by } = {}) {
     const r = recipients[i];
     let label = r.name || r.phone || r.jid;
     try {
-      const jid = r.kind === 'group' ? r.jid : await resolvePhoneJid(r.phone);
+      const jid = r.kind === 'group' ? r.jid : await resolvePhoneJid(owner, r.phone);
       if (seen.has(jid)) continue;
       seen.add(jid);
       if (r.kind === 'phone') label = r.name ? `${r.name} (${r.phone})` : r.phone;
       if (ok + fail > 0) await sleep(randDelay());
-      await sendTo(jid, personalize(s.text, r.kind === 'group' ? '' : r.name), s.attachment);
+      await sendTo(owner, jid, personalize(s.text, r.kind === 'group' ? '' : r.name), s.attachment);
       ok++;
-      addHistory({ scheduleId: s.id, title: s.title, to: label, ok: true, manual, by });
+      addHistory({ ownerId: owner, scheduleId: s.id, title: s.title, to: label, ok: true, manual, by });
     } catch (e) {
       fail++;
-      addHistory({ scheduleId: s.id, title: s.title, to: label, ok: false, error: e.message, manual, by });
+      addHistory({ ownerId: owner, scheduleId: s.id, title: s.title, to: label, ok: false, error: e.message, manual, by });
     }
   }
   s.lastRun = new Date().toISOString();
@@ -116,41 +117,49 @@ export async function runSchedule(s, { manual = false, by } = {}) {
 }
 
 async function tick() {
-  if (running) return;
-  running = true;
-  try {
-    const now = new Date();
-    const due = db.schedules
-      .filter((s) => s.active && s.nextRun && new Date(s.nextRun) <= now)
-      .sort((a, b) => new Date(a.nextRun) - new Date(b.nextRun));
+  const now = new Date();
+  const due = db.schedules
+    .filter((s) => s.active && s.nextRun && new Date(s.nextRun) <= now && s.status !== 'enviando')
+    .sort((a, b) => new Date(a.nextRun) - new Date(b.nextRun));
+  // Cada usuario envía desde su WhatsApp: se procesan en paralelo, uno a la vez por usuario.
+  const byOwner = new Map();
+  for (const s of due) {
+    if (!byOwner.has(s.ownerId)) byOwner.set(s.ownerId, []);
+    byOwner.get(s.ownerId).push(s);
+  }
+  for (const [owner, list] of byOwner) {
+    if (runningOwners.has(owner)) continue;
+    runningOwners.add(owner);
+    processOwner(owner, list)
+      .catch((e) => console.error('Error en el programador:', e))
+      .finally(() => runningOwners.delete(owner));
+  }
+}
 
-    for (const s of due) {
-      const lateMin = (Date.now() - new Date(s.nextRun)) / 60000;
-      if (lateMin > MAX_LATE_MIN) {
-        addHistory({
-          scheduleId: s.id,
-          title: s.title,
-          to: '—',
-          ok: false,
-          error: `Omitido: estaba programado para ${new Date(s.nextRun).toLocaleString('es-AR')} y la app no estaba funcionando`,
-        });
-        advance(s, 'omitido');
-        continue;
-      }
-      if (wa.status !== 'conectado') {
-        if (s.status !== 'esperando-conexion') {
-          s.status = 'esperando-conexion';
-          save();
-        }
-        continue;
-      }
-      await runSchedule(s);
-      advance(s, s.lastResult.fail && !s.lastResult.ok ? 'error' : 'enviado');
+async function processOwner(owner, list) {
+  for (const s of list) {
+    const lateMin = (Date.now() - new Date(s.nextRun)) / 60000;
+    if (lateMin > MAX_LATE_MIN) {
+      addHistory({
+        ownerId: owner,
+        scheduleId: s.id,
+        title: s.title,
+        to: '—',
+        ok: false,
+        error: `Omitido: estaba programado para ${new Date(s.nextRun).toLocaleString('es-AR')} y WhatsApp no estaba conectado`,
+      });
+      advance(s, 'omitido');
+      continue;
     }
-  } catch (e) {
-    console.error('Error en el programador:', e);
-  } finally {
-    running = false;
+    if (!isConnected(owner)) {
+      if (s.status !== 'esperando-conexion') {
+        s.status = 'esperando-conexion';
+        save();
+      }
+      continue;
+    }
+    await runSchedule(s);
+    advance(s, s.lastResult.fail && !s.lastResult.ok ? 'error' : 'enviado');
   }
 }
 

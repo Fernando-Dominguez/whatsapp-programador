@@ -67,7 +67,9 @@ cd whatsapp-programador && git pull && bash instalar.sh
 
 ## Usuarios
 
-- **Administrador:** todo, más crear usuarios, vincular/desvincular WhatsApp y borrar el historial.
-- **Usuario:** programa envíos, arma listas y ve el historial.
-- Todos envían desde el mismo WhatsApp vinculado. El historial y los envíos muestran quién los creó.
+- **Cada usuario vincula su propio WhatsApp**: entra con su usuario, va a **Conexión** y escanea el QR con su teléfono.
+- Cada uno tiene **sus propios** envíos programados, listas e historial; nadie ve ni usa lo de otro.
+- **Administrador:** además crea, edita y borra usuarios (al borrar uno se desvincula su WhatsApp y se eliminan sus envíos y listas).
+- Los envíos de distintos usuarios salen en paralelo, cada uno desde su número.
+- Al actualizar desde la versión de un solo WhatsApp, lo que ya existía (sesión vinculada, envíos, listas e historial) pasa al primer administrador.
 - En tu compu (Windows), mientras no crees ningún usuario, el panel abre sin contraseña (solo desde esa misma compu).
