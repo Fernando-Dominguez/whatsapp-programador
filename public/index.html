@@ -138,6 +138,9 @@
     <label for="lgPass">Contraseña</label>
     <input id="lgPass" type="password" autocomplete="current-password" required>
     <div class="actions" style="margin-top:16px"><button class="btn primary" type="submit">Entrar</button></div>
+    <div class="hidden" id="bioLoginWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
+      <button class="btn" type="button" id="bioLogin" style="width:100%">👆 Entrar con huella o cara</button>
+    </div>
     <div class="err" id="lgErr"></div>
   </form>
 </div>
@@ -306,7 +309,14 @@
       <p class="hint">Cada usuario vincula su propio WhatsApp. Para usar otro número, desvinculá y escaneá el código nuevo.</p>
     </div>
     <div class="card" id="myPassCard">
-      <h2>Mi contraseña</h2>
+      <h2>Mi cuenta</h2>
+      <div id="bioSection" class="hidden">
+        <label>Entrar con huella</label>
+        <p class="hint" style="margin-top:0">Activala en cada celular o compu que uses. Después entrás tocando el sensor de huella (o con la cara o el PIN del dispositivo), sin escribir la contraseña.</p>
+        <div id="bioList"></div>
+        <button class="btn" id="bioAdd" style="margin-top:8px">👆 Activar huella en este dispositivo</button>
+      </div>
+      <label for="myPass">Cambiar contraseña</label>
       <div class="row"><input id="myPass" type="password" autocomplete="new-password" placeholder="Nueva contraseña (mínimo 8)">
       <button class="btn" id="saveMyPass">Cambiar</button></div>
     </div>
@@ -323,6 +333,7 @@
 </main>
 <div class="toast" id="toast"></div>
 
+<script src="/vendor/webauthn.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -729,6 +740,69 @@ $('#saveUser').onclick = async () => {
   } catch (e) { toast(e.message); }
 };
 
+// ---------- Huella (llaves de acceso) ----------
+const WA = window.SimpleWebAuthnBrowser;
+const bioSupported = !!(WA && WA.browserSupportsWebAuthn && WA.browserSupportsWebAuthn());
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sin almacenamiento */ } };
+const bioError = (e) => (e && (e.name === 'NotAllowedError' || /cancel|abort|not allowed/i.test(e.message || ''))) ? 'Cancelado' : (e.message || 'No se pudo usar la huella');
+
+if (bioSupported) {
+  $('#bioLoginWrap').classList.remove('hidden');
+  // Si en este dispositivo ya se activó, la huella pasa a ser la opción principal
+  if (lsGet('huella') === '1') $('#bioLogin').classList.add('primary');
+}
+$('#bioLogin').onclick = async () => {
+  $('#lgErr').textContent = '';
+  try {
+    const optionsJSON = await api('/api/passkey/login-options', { method: 'POST' });
+    const resp = await WA.startAuthentication({ optionsJSON });
+    await api('/api/passkey/login-verify', { method: 'POST', body: resp });
+    lsSet('huella', '1');
+    $('#login').classList.add('hidden'); boot();
+  } catch (e) { $('#lgErr').textContent = bioError(e); }
+};
+async function loadBio() {
+  if (!bioSupported || me?.local) return;
+  $('#bioSection').classList.remove('hidden');
+  const keys = await api('/api/passkeys').catch(() => []);
+  $('#bioList').innerHTML = keys.length ? keys.map((k) => `<div class="item" style="padding:8px 0"><div class="body">
+      <div>🔐 ${esc(k.name)}</div><div class="meta"><span>Activada ${fmt(k.createdAt)}</span>${k.lastUsed ? `<span>Último uso ${fmt(k.lastUsed)}</span>` : ''}</div></div>
+      <button class="btn sm danger" data-del="${esc(k.id)}">Quitar</button></div>`).join('')
+    : '<p class="hint">Todavía no activaste la huella en ningún dispositivo.</p>';
+}
+$('#bioList').onclick = async (e) => {
+  const id = e.target.dataset.del; if (!id) return;
+  if (!confirm('¿Quitar esta huella? Ese dispositivo va a tener que entrar con contraseña.')) return;
+  await api('/api/passkeys/' + encodeURIComponent(id), { method: 'DELETE' }); loadBio();
+};
+async function activateBio() {
+  try {
+    const optionsJSON = await api('/api/passkeys/register-options', { method: 'POST' });
+    const resp = await WA.startRegistration({ optionsJSON });
+    await api('/api/passkeys/register-verify', { method: 'POST', body: resp });
+    lsSet('huella', '1'); toast('Listo: la próxima vez entrás con la huella'); loadBio();
+    $('#bioOffer')?.remove();
+  } catch (e) {
+    toast(e.name === 'InvalidStateError' ? 'La huella ya está activada en este dispositivo' : bioError(e));
+  }
+}
+$('#bioAdd').onclick = activateBio;
+// Después de entrar con contraseña en un celular: ofrecer activar la huella (una vez)
+async function offerBio() {
+  if (!bioSupported || me?.local || lsGet('huella') === '1' || lsGet('huella-ofrecida') === '1') return;
+  if (!(await WA.platformAuthenticatorIsAvailable?.().catch(() => false))) return;
+  lsSet('huella-ofrecida', '1');
+  const box = document.createElement('div');
+  box.id = 'bioOffer'; box.className = 'card';
+  box.innerHTML = `<h2>👆 ¿Entrar con la huella la próxima vez?</h2>
+    <p class="hint">Así no tenés que escribir la contraseña en este dispositivo.</p>
+    <div class="actions" style="margin-top:10px"><button class="btn primary" id="bioOfferYes">Activar</button><button class="btn" id="bioOfferNo">Ahora no</button></div>`;
+  document.querySelector('main').prepend(box);
+  $('#bioOfferYes').onclick = activateBio;
+  $('#bioOfferNo').onclick = () => box.remove();
+}
+
 async function boot() {
   try { me = await api('/api/me'); } catch { return; }
   $('#userMenu').classList.toggle('hidden', !!me.local);
@@ -736,7 +810,7 @@ async function boot() {
   $('#myPassCard').classList.toggle('hidden', !!me.local);
   document.querySelectorAll('.admin-only').forEach((el) => el.classList.toggle('hide-role', me.role !== 'admin'));
   if (!booted) { booted = true; setInterval(pollStatus, 3000); }
-  pollStatus(); resetForm(); loadLists(); loadGroups();
+  pollStatus(); resetForm(); loadLists(); loadGroups(); loadBio(); offerBio();
 }
 boot();
 </script>

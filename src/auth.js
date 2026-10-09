@@ -130,6 +130,11 @@ export function login(req, res) {
   res.json(publicUser(u));
 }
 
+/** Inicia sesión para un usuario ya verificado (ej. con huella). */
+export function startUserSession(req, res, u) {
+  setCookie(req, res, makeToken(u), MAX_AGE_DAYS * 86400);
+}
+
 export function logout(req, res) {
   setCookie(req, res, '', 0);
   res.json({ ok: true });

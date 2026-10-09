@@ -71,6 +71,7 @@ cd ~/whatsapp-programador && git pull && bash instalar.sh
 - **Desde el celular**: como no se puede escanear un QR en la misma pantalla, se usa *¿Estás en el celular?* → escribe su número → **Obtener código**, y lo ingresa en WhatsApp → Dispositivos vinculados → Vincular un dispositivo → *Vincular con el número de teléfono*.
 - En el celular se puede agregar el panel a la pantalla de inicio (Chrome: menú ⋮ → *Agregar a la pantalla principal*; iPhone/Safari: Compartir → *Agregar a inicio*) y queda como una app.
 - **Contactos de WhatsApp**: al vincular, WhatsApp le pasa a la app tus contactos (como a WhatsApp Web). En *Nuevo envío → Persona* y en *Listas* hay un buscador: escribís parte del nombre y tocás el contacto. Si vinculaste antes de esta función, desvinculá y volvé a vincular una vez para traerlos.
+- **Entrar con huella**: después de entrar una vez con contraseña, la app ofrece activar la huella (o cara/PIN) en ese dispositivo; también desde *Conexión → Mi cuenta*. Se activa en cada celular o compu por separado, y se puede quitar desde ahí.
 - Cada uno tiene **sus propios** envíos programados, listas e historial; nadie ve ni usa lo de otro.
 - **Administrador:** además crea, edita y borra usuarios (al borrar uno se desvincula su WhatsApp y se eliminan sus envíos y listas).
 - Los envíos de distintos usuarios salen en paralelo, cada uno desde su número.

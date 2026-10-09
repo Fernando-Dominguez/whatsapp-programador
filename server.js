@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db, { save, newId, MEDIA_DIR } from './src/db.js';
+import { registerOptions, registerVerify, loginOptions, loginVerify, listPasskeys, deletePasskey } from './src/passkeys.js';
 import { resyncContacts, findContacts, contactCount, requestPairCode, sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
 import { login, logout, requireAuth, requireAdmin, createUser, updateUser, deleteUser, publicUser } from './src/auth.js';
 import { startScheduler, runSchedule, computeNext, firstNext, expandTargets, REPEAT_LABELS } from './src/scheduler.js';
@@ -17,6 +18,9 @@ app.set('trust proxy', 'loopback'); // detrás de Caddy (https) en el servidor
 app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Librería del navegador para la huella (servida desde el propio servidor)
+app.get('/vendor/webauthn.js', (req, res) =>
+  res.sendFile(path.join(__dirname, 'node_modules/@simplewebauthn/browser/dist/bundle/index.umd.min.js')));
 
 // ---------- Pasaje desde versiones anteriores ----------
 // Todo lo que no tiene dueño (versión de un solo WhatsApp, o uso local sin usuarios)
@@ -56,6 +60,8 @@ const wrap = (fn) => async (req, res) => {
 // ---------- Sesión ----------
 app.post('/api/login', login);
 app.post('/api/salir', logout);
+app.post('/api/passkey/login-options', wrap(loginOptions));
+app.post('/api/passkey/login-verify', wrap(loginVerify));
 app.use('/api', requireAuth);
 app.get('/api/me', (req, res) => res.json({ ...publicUser(req.user), local: !!req.user.local }));
 
@@ -80,6 +86,11 @@ app.delete('/api/users/:id', requireAdmin, wrap(async (req, res) => {
   save();
   res.json({ ok: true });
 }));
+// Huellas / llaves de acceso del usuario
+app.get('/api/passkeys', listPasskeys);
+app.post('/api/passkeys/register-options', wrap(registerOptions));
+app.post('/api/passkeys/register-verify', wrap(registerVerify));
+app.delete('/api/passkeys/:id', deletePasskey);
 // Cualquier usuario puede cambiar su propia contraseña
 app.post('/api/me/password', wrap((req, res) => {
   if (req.user.local) throw new Error('Primero creá un usuario administrador');
