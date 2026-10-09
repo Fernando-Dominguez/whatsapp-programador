@@ -9,7 +9,7 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 import pino from 'pino';
 import { DATA_DIR } from './db.js';
-import { upsertContacts, addLidMappings, searchContacts, contactCount, deleteContacts } from './contacts.js';
+import { upsertContacts, addLidMappings, searchContacts, contactCount, deleteContacts, lidsWithoutPhone } from './contacts.js';
 
 const SESSIONS_DIR = path.join(DATA_DIR, 'sesiones');
 const LEGACY_DIR = path.join(DATA_DIR, 'sesion-whatsapp'); // versión anterior (un solo WhatsApp)
@@ -91,6 +91,7 @@ export async function startSession(userId) {
       upsertContacts(userId, contacts);
     });
     sock.ev.on('contacts.upsert', (list) => upsertContacts(userId, list));
+    sock.ev.on('lid-mapping.update', (m) => addLidMappings(userId, [m]));
     sock.ev.on('contacts.update', (list) => upsertContacts(userId, list));
     // Gente que te escribe: guardar el nombre que tiene puesto en WhatsApp
     sock.ev.on('messages.upsert', ({ messages }) => {
@@ -119,6 +120,13 @@ export async function startSession(userId) {
         s.qr = null;
         s.me = { id: sock.user?.id, name: sock.user?.name || sock.user?.verifiedName || '' };
         console.log(`✔ WhatsApp conectado (usuario ${userId}: ${s.me.id})`);
+        // Si tiene pocos contactos (ej. vinculado antes de esta función), pedirlos de nuevo una vez
+        if (!s.autoResynced && contactCount(userId) < 20) {
+          s.autoResynced = true;
+          setTimeout(() => resyncContacts(userId).catch((e) => console.error('Recarga de contactos:', e.message)), 15000);
+        } else {
+          setTimeout(() => resolveMissingPhones(userId), 15000);
+        }
       }
       if (u.connection === 'close') {
         const code = u.lastDisconnect?.error?.output?.statusCode;
@@ -246,6 +254,46 @@ export function normalizePhone(raw) {
     }
   }
   return d;
+}
+
+/**
+ * Pide a WhatsApp de nuevo la lista completa de contactos agendados
+ * (la "sincronización" que hace al vincular), sin tener que desvincular.
+ */
+export async function resyncContacts(userId) {
+  const s = getSession(userId);
+  const sock = s.sock;
+  if (!sock || s.status !== 'conectado') throw new Error('Tu WhatsApp no está conectado');
+  if (s.resyncing) throw new Error('Ya se están cargando los contactos, esperá un momento');
+  s.resyncing = true;
+  try {
+    const names = ['critical_unblock_low', 'regular_high', 'regular_low', 'regular'];
+    // Borrar la versión guardada fuerza a WhatsApp a mandar todo desde cero
+    await sock.authState.keys.set({ 'app-state-sync-version': Object.fromEntries(names.map((n) => [n, null])) });
+    await sock.resyncAppState(names, true);
+    await resolveMissingPhones(userId);
+    console.log(`Contactos recargados (usuario ${userId}): ${contactCount(userId)}`);
+  } finally {
+    s.resyncing = false;
+  }
+  return contactCount(userId);
+}
+
+/** Completa el teléfono de contactos que llegaron solo con su identificador interno (LID). */
+async function resolveMissingPhones(userId) {
+  const sock = getSession(userId).sock;
+  const store = sock?.signalRepository?.lidMapping;
+  if (!store) return;
+  const found = [];
+  for (const lid of lidsWithoutPhone(userId)) {
+    try {
+      const pn = await store.getPNForLID(lid);
+      if (pn) found.push({ lid, pn });
+    } catch {
+      /* seguir con el resto */
+    }
+  }
+  if (found.length) addLidMappings(userId, found);
 }
 
 /** Busca en los contactos de WhatsApp del usuario. */

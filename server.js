@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db, { save, newId, MEDIA_DIR } from './src/db.js';
-import { findContacts, contactCount, requestPairCode, sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
+import { resyncContacts, findContacts, contactCount, requestPairCode, sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
 import { login, logout, requireAuth, requireAdmin, createUser, updateUser, deleteUser, publicUser } from './src/auth.js';
 import { startScheduler, runSchedule, computeNext, firstNext, expandTargets, REPEAT_LABELS } from './src/scheduler.js';
 
@@ -89,6 +89,7 @@ app.post('/api/me/password', wrap((req, res) => {
 
 // ---------- Conexión ----------
 app.get('/api/status', (req, res) => res.json({ ...sessionStatus(req.user.id), contacts: contactCount(req.user.id) }));
+app.post('/api/contacts/resync', wrap(async (req, res) => res.json({ count: await resyncContacts(req.user.id) })));
 app.get('/api/contacts', wrap(async (req, res) => res.json(await findContacts(req.user.id, String(req.query.q || '')))));
 app.post('/api/pair', wrap(async (req, res) => res.json({ code: await requestPairCode(req.user.id, req.body.phone) })));
 app.post('/api/logout', wrap(async (req, res) => { await logoutSession(req.user.id); res.json({ ok: true }); }));

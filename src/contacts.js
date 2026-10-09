@@ -88,7 +88,12 @@ export function addLidMappings(userId, mappings) {
 }
 
 export function contactCount(userId) {
-  return Object.values(load(userId).contacts).filter((c) => c.phone).length;
+  return Object.values(load(userId).contacts).filter((c) => (c.name || c.notify) && (c.phone || c.lid)).length;
+}
+
+/** Contactos guardados con nombre pero de los que todavía no sabemos el teléfono. */
+export function lidsWithoutPhone(userId) {
+  return Object.values(load(userId).contacts).filter((c) => !c.phone && c.lid).map((c) => c.lid);
 }
 
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();

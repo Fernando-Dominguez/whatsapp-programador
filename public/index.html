@@ -300,6 +300,7 @@
       <h2>Conexión</h2>
       <p id="connInfo">—</p>
       <p class="hint" id="contactsInfo"></p>
+      <button class="btn hidden" id="resyncContacts" style="margin-bottom:10px">↻ Recargar contactos de WhatsApp</button>
       <button class="btn danger" id="logout">Desvincular mi WhatsApp</button>
       <p class="hint">Cada usuario vincula su propio WhatsApp. Para usar otro número, desvinculá y escaneá el código nuevo.</p>
     </div>
@@ -365,8 +366,9 @@ async function pollStatus() {
     $('#logout').classList.toggle('hidden', s.status !== 'conectado');
     contactsTotal = s.contacts || 0;
     $('#contactsInfo').textContent = s.status === 'conectado'
-      ? (contactsTotal ? `${contactsTotal} contactos de WhatsApp disponibles para buscar.` : 'Todavía no llegaron tus contactos. Si vinculaste el WhatsApp antes de esta versión, desvinculalo y volvé a vincularlo para traerlos.')
+      ? (contactsTotal ? `${contactsTotal} contactos de WhatsApp disponibles para buscar.` : 'Todavía no llegaron tus contactos.')
       : '';
+    $('#resyncContacts').classList.toggle('hidden', s.status !== 'conectado');
     if (s.status !== 'conectado') $('#connInfo').textContent = s.status === 'esperando-qr'
       ? 'Escaneá el código QR que aparece arriba con tu teléfono.' : text + '. En unos segundos aparece el código QR para vincular tu WhatsApp.';
     if (s.status === 'conectado' && waStatus !== 'conectado') loadGroups();
@@ -377,6 +379,12 @@ async function pollStatus() {
 }
 
 
+$('#resyncContacts').onclick = async () => {
+  const btn = $('#resyncContacts'); btn.disabled = true; btn.textContent = 'Cargando contactos… (puede tardar un minuto)';
+  try { const { count } = await api('/api/contacts/resync', { method: 'POST' }); toast(`Listo: ${count} contactos`); pollStatus(); }
+  catch (e) { toast(e.message); }
+  btn.disabled = false; btn.textContent = '↻ Recargar contactos de WhatsApp';
+};
 $('#logout').onclick = async () => {
   if (!confirm('¿Desvincular tu WhatsApp? Tus envíos programados no van a salir hasta que lo vuelvas a vincular.')) return;
   await api('/api/logout', { method: 'POST' }); toast('Desvinculado'); pollStatus();
