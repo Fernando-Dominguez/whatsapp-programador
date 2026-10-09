@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db, { save, newId, MEDIA_DIR } from './src/db.js';
-import { sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
+import { requestPairCode, sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
 import { login, logout, requireAuth, requireAdmin, createUser, updateUser, deleteUser, publicUser } from './src/auth.js';
 import { startScheduler, runSchedule, computeNext, firstNext, expandTargets, REPEAT_LABELS } from './src/scheduler.js';
 
@@ -89,6 +89,7 @@ app.post('/api/me/password', wrap((req, res) => {
 
 // ---------- Conexión ----------
 app.get('/api/status', (req, res) => res.json(sessionStatus(req.user.id)));
+app.post('/api/pair', wrap(async (req, res) => res.json({ code: await requestPairCode(req.user.id, req.body.phone) })));
 app.post('/api/logout', wrap(async (req, res) => { await logoutSession(req.user.id); res.json({ ok: true }); }));
 app.get('/api/groups', wrap(async (req, res) => res.json(await listGroups(req.user.id))));
 

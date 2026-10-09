@@ -22,6 +22,14 @@ const sessions = new Map();
 
 const authDir = (userId) => path.join(SESSIONS_DIR, String(userId).replace(/[^\w-]/g, '_'));
 const hasCreds = (userId) => fs.existsSync(path.join(authDir(userId), 'creds.json'));
+/** true si ese usuario ya terminó de vincular su WhatsApp (no solo empezó). */
+function isRegistered(dir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, 'creds.json'), 'utf8')).registered === true;
+  } catch {
+    return false;
+  }
+}
 
 function getSession(userId) {
   if (!sessions.has(userId)) sessions.set(userId, { status: 'desconectado', qr: null, me: null, sock: null });
@@ -80,7 +88,7 @@ export async function startSession(userId) {
       if (s.sock !== sock) return; // evento de una conexión vieja
       if (u.qr) {
         // Nadie está mirando el QR: no seguir generándolo
-        if (!hasCreds(userId) && Date.now() - (s.lastSeen || 0) > QR_IDLE_MS) {
+        if (!isRegistered(authDir(userId)) && Date.now() - (s.lastSeen || 0) > QR_IDLE_MS) {
           stopSocket(userId);
           s.status = 'desconectado';
           return;
@@ -143,6 +151,25 @@ export function sessionStatus(userId) {
   return { status: s.status, qr: s.qr, me: s.me };
 }
 
+/**
+ * Vinculación con código (sin QR), para cuando se usa el panel desde el mismo celular.
+ * Devuelve un código de 8 caracteres para ingresar en WhatsApp → Dispositivos vinculados
+ * → Vincular un dispositivo → "Vincular con el número de teléfono".
+ */
+export async function requestPairCode(userId, phone) {
+  const num = normalizePhone(phone);
+  if (num.length < 10) throw new Error('Escribí tu número completo, con código de área');
+  const s = getSession(userId);
+  if (s.status === 'conectado') throw new Error('Tu WhatsApp ya está conectado');
+  s.lastSeen = Date.now();
+  if (!s.sock && !s.starting) startSession(userId);
+  // Esperar a que la conexión esté lista para vincular (cuando WhatsApp manda el primer QR)
+  for (let i = 0; i < 40 && s.status !== 'esperando-qr'; i++) await new Promise((r) => setTimeout(r, 500));
+  if (!s.sock || s.status !== 'esperando-qr') throw new Error('No se pudo preparar la vinculación. Probá de nuevo en unos segundos.');
+  const code = await s.sock.requestPairingCode(num);
+  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+}
+
 export const isConnected = (userId) => getSession(userId).status === 'conectado';
 
 export async function logoutSession(userId) {
@@ -166,7 +193,7 @@ export async function removeSession(userId) {
 /** Al arrancar: reconecta a todos los usuarios que ya tenían su WhatsApp vinculado. */
 export function startSavedSessions() {
   for (const dir of fs.readdirSync(SESSIONS_DIR)) {
-    if (fs.existsSync(path.join(SESSIONS_DIR, dir, 'creds.json'))) startSession(dir);
+    if (isRegistered(path.join(SESSIONS_DIR, dir))) startSession(dir);
   }
 }
 
