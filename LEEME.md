@@ -57,7 +57,7 @@ Después entrás al panel, vas a **Conexión** y escaneás el QR con el teléfon
 **Actualizar** a una versión nueva (conserva datos, usuarios y sesión de WhatsApp):
 
 ```bash
-cd whatsapp-programador && git pull && bash instalar.sh
+cd ~/whatsapp-programador && git pull && bash instalar.sh
 ```
 
 **Comandos útiles:**
