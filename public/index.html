@@ -140,6 +140,7 @@
     <div class="actions" style="margin-top:16px"><button class="btn primary" type="submit">Entrar</button></div>
     <div class="hidden" id="bioLoginWrap" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px">
       <button class="btn" type="button" id="bioLogin" style="width:100%">👆 Entrar con huella o cara</button>
+      <p class="hint hidden" id="bioHint">Primero entrá con tu contraseña y activá la huella en este dispositivo (te lo ofrece la app, o en Conexión → Mi cuenta).</p>
     </div>
     <div class="err" id="lgErr"></div>
   </form>
@@ -751,6 +752,7 @@ if (bioSupported) {
   $('#bioLoginWrap').classList.remove('hidden');
   // Si en este dispositivo ya se activó, la huella pasa a ser la opción principal
   if (lsGet('huella') === '1') $('#bioLogin').classList.add('primary');
+  else $('#bioHint').classList.remove('hidden');
 }
 $('#bioLogin').onclick = async () => {
   $('#lgErr').textContent = '';
@@ -760,7 +762,11 @@ $('#bioLogin').onclick = async () => {
     await api('/api/passkey/login-verify', { method: 'POST', body: resp });
     lsSet('huella', '1');
     $('#login').classList.add('hidden'); boot();
-  } catch (e) { $('#lgErr').textContent = bioError(e); }
+  } catch (e) {
+    $('#lgErr').textContent = bioError(e) === 'Cancelado'
+      ? 'No se usó la huella. Si todavía no la activaste en este dispositivo, entrá con tu contraseña y activala en Conexión → Mi cuenta.'
+      : bioError(e);
+  }
 };
 async function loadBio() {
   if (!bioSupported || me?.local) return;
