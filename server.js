@@ -91,7 +91,7 @@ app.post('/api/me/password', wrap((req, res) => {
 app.get('/api/status', (req, res) => res.json({ ...sessionStatus(req.user.id), contacts: contactCount(req.user.id) }));
 app.post('/api/contacts/resync', wrap(async (req, res) => res.json({ count: await resyncContacts(req.user.id) })));
 app.get('/api/contacts', wrap(async (req, res) => res.json(await findContacts(req.user.id, String(req.query.q || '')))));
-app.post('/api/pair', wrap(async (req, res) => res.json({ code: await requestPairCode(req.user.id, req.body.phone) })));
+app.post('/api/pair', wrap(async (req, res) => res.json(await requestPairCode(req.user.id, req.body.phone))));
 app.post('/api/logout', wrap(async (req, res) => { await logoutSession(req.user.id); res.json({ ok: true }); }));
 app.get('/api/groups', wrap(async (req, res) => res.json(await listGroups(req.user.id))));
 

@@ -161,10 +161,11 @@
       </div>
       <div id="pairResult" class="hidden">
         <div class="paircode" id="pairCode"></div>
+        <p class="hint">Código para el número <b id="pairFor"></b>. Tiene que ser exactamente el número de la cuenta de WhatsApp que vas a vincular (si no coincide, WhatsApp lo rechaza).</p>
         <ol>
           <li>Abrí WhatsApp → <b>Dispositivos vinculados</b> → <b>Vincular un dispositivo</b>.</li>
           <li>Abajo tocá <b>Vincular con el número de teléfono</b>.</li>
-          <li>Escribí este código. Tenés unos minutos antes de que venza.</li>
+          <li>Escribí este código <b>enseguida</b> (vence en un par de minutos). Si falla, volvé acá y tocá <b>Obtener código</b> de nuevo.</li>
         </ol>
       </div>
     </details>
@@ -393,8 +394,8 @@ $('#logout').onclick = async () => {
 $('#pairBtn').onclick = async () => {
   const btn = $('#pairBtn'); btn.disabled = true; btn.textContent = 'Generando…';
   try {
-    const { code } = await api('/api/pair', { method: 'POST', body: { phone: $('#pairPhone').value } });
-    $('#pairCode').textContent = code; $('#pairResult').classList.remove('hidden');
+    const { code, phone } = await api('/api/pair', { method: 'POST', body: { phone: $('#pairPhone').value } });
+    $('#pairCode').textContent = code; $('#pairFor').textContent = '+' + phone; $('#pairResult').classList.remove('hidden');
   } catch (e) { toast(e.message); }
   btn.disabled = false; btn.textContent = 'Obtener código';
 };

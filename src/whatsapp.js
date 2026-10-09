@@ -5,6 +5,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import pino from 'pino';
@@ -79,7 +80,8 @@ export async function startSession(userId) {
       auth: state,
       version: await version(),
       logger: pino({ level: 'silent' }),
-      browser: ['Programador WhatsApp', 'Chrome', '1.0'],
+      // Navegador estándar: la vinculación con código no acepta nombres personalizados
+      browser: Browsers.ubuntu('Chrome'),
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
@@ -107,7 +109,8 @@ export async function startSession(userId) {
       if (s.sock !== sock) return; // evento de una conexión vieja
       if (u.qr) {
         // Nadie está mirando el QR: no seguir generándolo
-        if (!isRegistered(authDir(userId)) && Date.now() - (s.lastSeen || 0) > QR_IDLE_MS) {
+        const pairing = s.pairingUntil && Date.now() < s.pairingUntil;
+        if (!pairing && !isRegistered(authDir(userId)) && Date.now() - (s.lastSeen || 0) > QR_IDLE_MS) {
           stopSocket(userId);
           s.status = 'desconectado';
           return;
@@ -192,8 +195,10 @@ export async function requestPairCode(userId, phone) {
   // Esperar a que la conexión esté lista para vincular (cuando WhatsApp manda el primer QR)
   for (let i = 0; i < 40 && s.status !== 'esperando-qr'; i++) await new Promise((r) => setTimeout(r, 500));
   if (!s.sock || s.status !== 'esperando-qr') throw new Error('No se pudo preparar la vinculación. Probá de nuevo en unos segundos.');
+  // Mientras el usuario va a WhatsApp a escribir el código, no cortar esta conexión
+  s.pairingUntil = Date.now() + 5 * 60 * 1000;
   const code = await s.sock.requestPairingCode(num);
-  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
+  return { code: code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code, phone: num };
 }
 
 export const isConnected = (userId) => getSession(userId).status === 'conectado';
