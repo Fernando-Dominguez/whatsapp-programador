@@ -8,6 +8,7 @@ import db, { save, newId, MEDIA_DIR } from './src/db.js';
 import { registerOptions, registerVerify, loginOptions, loginVerify, listPasskeys, deletePasskey } from './src/passkeys.js';
 import { resyncContacts, findContacts, contactCount, requestPairCode, sessionStatus, isConnected, logoutSession, removeSession, startSavedSessions, migrateLegacySession, listGroups, normalizePhone } from './src/whatsapp.js';
 import { login, logout, requireAuth, requireAdmin, createUser, updateUser, deleteUser, publicUser } from './src/auth.js';
+import { avisosRouter } from './src/avisos.js';
 import { startScheduler, runSchedule, computeNext, firstNext, expandTargets, REPEAT_LABELS } from './src/scheduler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ const wrap = (fn) => async (req, res) => {
     res.status(400).json({ error: e.message });
   }
 };
-
+app.use('/hooks', avisosRouter());
 // ---------- Sesión ----------
 app.post('/api/login', login);
 app.post('/api/salir', logout);
