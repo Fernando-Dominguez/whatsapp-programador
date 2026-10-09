@@ -82,6 +82,15 @@
   .qrbox { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; }
   .qrbox img { width: 240px; height: 240px; background: #fff; padding: 8px; border-radius: 8px; }
   .qrbox ol { margin: 0; padding-left: 20px; }
+  .suggest { position: relative; }
+  .suggest-list { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 300px; overflow-y: auto; }
+  .suggest-list button { display: flex; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: none;
+    border: 0; border-bottom: 1px solid var(--line); padding: 10px 12px; font: inherit; color: var(--text); cursor: pointer; }
+  .suggest-list button:last-child { border-bottom: 0; }
+  .suggest-list button:hover, .suggest-list button.on { background: var(--accent-soft); }
+  .suggest-list .ph { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .suggest-list .none { padding: 10px 12px; color: var(--muted); font-size: 14px; }
   .pair { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
   .pair summary { cursor: pointer; font-size: 14px; }
   .paircode { font: 700 30px/1.2 ui-monospace, Consolas, monospace; letter-spacing: 4px; margin: 14px 0 6px; color: var(--accent); }
@@ -175,6 +184,9 @@
         <button data-t="group">Grupo</button>
         <button data-t="list">Lista</button>
       </div>
+      <div class="suggest" id="contactSearchWrap" style="margin-bottom:8px">
+        <input id="contactSearch" placeholder="🔍 Buscá en tus contactos de WhatsApp…" autocomplete="off">
+      </div>
       <div id="t-phone" class="row">
         <input id="tName" placeholder="Nombre (opcional)">
         <input id="tPhone" placeholder="Teléfono, ej. 11 2345 6789" inputmode="tel">
@@ -236,6 +248,8 @@
       <h2 id="listFormTitle">Nueva lista</h2>
       <label for="lName">Nombre de la lista</label>
       <input id="lName" placeholder="Ej.: Diplomado – Cohorte octubre">
+      <label for="listSearch">Agregar desde tus contactos de WhatsApp</label>
+      <div class="suggest"><input id="listSearch" placeholder="🔍 Buscá por nombre y tocá para agregar…" autocomplete="off"></div>
       <label for="lText">Contactos (uno por línea: nombre, teléfono)</label>
       <textarea id="lText" rows="8" placeholder="María López, 11 2345 6789&#10;Juan Pérez, +54 9 351 555 1234"></textarea>
       <p class="hint">Podés pegar columnas copiadas de Excel o Google Sheets (nombre y teléfono). Las líneas sin teléfono se ignoran.</p>
@@ -285,6 +299,7 @@
     <div class="card">
       <h2>Conexión</h2>
       <p id="connInfo">—</p>
+      <p class="hint" id="contactsInfo"></p>
       <button class="btn danger" id="logout">Desvincular mi WhatsApp</button>
       <p class="hint">Cada usuario vincula su propio WhatsApp. Para usar otro número, desvinculá y escaneá el código nuevo.</p>
     </div>
@@ -348,6 +363,10 @@ async function pollStatus() {
       ? `Conectado como ${s.me?.name || ''} (${(s.me?.id || '').split(':')[0].split('@')[0]})`
       : text;
     $('#logout').classList.toggle('hidden', s.status !== 'conectado');
+    contactsTotal = s.contacts || 0;
+    $('#contactsInfo').textContent = s.status === 'conectado'
+      ? (contactsTotal ? `${contactsTotal} contactos de WhatsApp disponibles para buscar.` : 'Todavía no llegaron tus contactos. Si vinculaste el WhatsApp antes de esta versión, desvinculalo y volvé a vincularlo para traerlos.')
+      : '';
     if (s.status !== 'conectado') $('#connInfo').textContent = s.status === 'esperando-qr'
       ? 'Escaneá el código QR que aparece arriba con tu teléfono.' : text + '. En unos segundos aparece el código QR para vincular tu WhatsApp.';
     if (s.status === 'conectado' && waStatus !== 'conectado') loadGroups();
@@ -374,6 +393,50 @@ $('#pairBtn').onclick = async () => {
 // En el celular, abrir directamente la opción del código
 if (matchMedia('(max-width: 600px)').matches) $('#pairBox').open = true;
 
+// ---------- Buscador de contactos ----------
+function contactPicker(input, onPick, { keepOpen = false } = {}) {
+  const wrap = input.parentElement;
+  const box = document.createElement('div');
+  box.className = 'suggest-list hidden';
+  wrap.appendChild(box);
+  let items = [], sel = -1, timer, seq = 0;
+  const close = () => { box.classList.add('hidden'); sel = -1; };
+  const render = () => {
+    box.innerHTML = items.length
+      ? items.map((c, i) => `<button type="button" data-i="${i}" class="${i === sel ? 'on' : ''}"><span>${esc(c.name || 'Sin nombre')}</span><span class="ph">+${esc(c.phone)}</span></button>`).join('')
+      : `<div class="none">${contactsTotal ? 'No encontré ese contacto.' : 'Todavía no hay contactos sincronizados. Mirá la pestaña Conexión.'}</div>`;
+    box.classList.remove('hidden');
+  };
+  const search = async () => {
+    const my = ++seq;
+    try { const r = await api('/api/contacts?q=' + encodeURIComponent(input.value)); if (my === seq) { items = r; sel = -1; render(); } } catch { /* nada */ }
+  };
+  input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 150); });
+  input.addEventListener('focus', () => { if (input.value.trim()) search(); });
+  input.addEventListener('keydown', (e) => {
+    if (box.classList.contains('hidden')) return;
+    if (e.key === 'ArrowDown') { sel = Math.min(sel + 1, items.length - 1); render(); e.preventDefault(); }
+    if (e.key === 'ArrowUp') { sel = Math.max(sel - 1, 0); render(); e.preventDefault(); }
+    if (e.key === 'Enter' && items[sel]) { pick(items[sel]); e.preventDefault(); }
+    if (e.key === 'Escape') close();
+  });
+  const pick = (c) => { onPick(c); if (keepOpen) { input.select(); } else { input.value = ''; close(); } };
+  box.addEventListener('mousedown', (e) => e.preventDefault());
+  box.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) pick(items[+b.dataset.i]); });
+  input.addEventListener('blur', () => setTimeout(close, 150));
+}
+let contactsTotal = 0;
+contactPicker($('#contactSearch'), (c) => {
+  if (!targets.some((t) => t.type === 'phone' && t.phone === c.phone)) targets.push({ type: 'phone', phone: c.phone, name: c.name });
+  renderChips(); toast(`Agregado: ${c.name || c.phone}`);
+});
+contactPicker($('#listSearch'), (c) => {
+  const ta = $('#lText');
+  if (ta.value.includes(c.phone)) return toast('Ya está en la lista');
+  ta.value = (ta.value.trim() ? ta.value.replace(/\s*$/, '') + '\n' : '') + (c.name ? `${c.name}, ${c.phone}` : c.phone);
+  toast(`Agregado: ${c.name || c.phone}`);
+}, { keepOpen: true });
+
 // ---------- Destinatarios ----------
 let targets = [];
 let lists = [];
@@ -390,6 +453,7 @@ $('#targetTabs').onclick = (e) => {
   const t = e.target.dataset.t; if (!t) return;
   document.querySelectorAll('#targetTabs button').forEach((b) => b.classList.toggle('active', b.dataset.t === t));
   ['phone', 'group', 'list'].forEach((k) => $('#t-' + k).classList.toggle('hidden', k !== t));
+  $('#contactSearchWrap').classList.toggle('hidden', t !== 'phone');
 };
 $('#addPhone').onclick = () => {
   const phone = $('#tPhone').value.trim();

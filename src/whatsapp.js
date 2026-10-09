@@ -9,6 +9,7 @@ import makeWASocket, {
 import QRCode from 'qrcode';
 import pino from 'pino';
 import { DATA_DIR } from './db.js';
+import { upsertContacts, addLidMappings, searchContacts, contactCount, deleteContacts } from './contacts.js';
 
 const SESSIONS_DIR = path.join(DATA_DIR, 'sesiones');
 const LEGACY_DIR = path.join(DATA_DIR, 'sesion-whatsapp'); // versión anterior (un solo WhatsApp)
@@ -84,6 +85,23 @@ export async function startSession(userId) {
     });
     s.sock = sock;
     sock.ev.on('creds.update', saveCreds);
+    // Contactos: los manda WhatsApp al vincular (y luego actualizaciones)
+    sock.ev.on('messaging-history.set', ({ contacts, lidPnMappings }) => {
+      addLidMappings(userId, lidPnMappings);
+      upsertContacts(userId, contacts);
+    });
+    sock.ev.on('contacts.upsert', (list) => upsertContacts(userId, list));
+    sock.ev.on('contacts.update', (list) => upsertContacts(userId, list));
+    // Gente que te escribe: guardar el nombre que tiene puesto en WhatsApp
+    sock.ev.on('messages.upsert', ({ messages }) => {
+      const list = [];
+      for (const m of messages || []) {
+        const jid = m.key?.remoteJid;
+        if (m.key?.fromMe || !m.pushName || !jid || jid.endsWith('@g.us')) continue;
+        list.push({ id: jid, phoneNumber: m.key?.remoteJidAlt || m.key?.senderPn, notify: m.pushName });
+      }
+      if (list.length) upsertContacts(userId, list);
+    });
     sock.ev.on('connection.update', async (u) => {
       if (s.sock !== sock) return; // evento de una conexión vieja
       if (u.qr) {
@@ -187,6 +205,7 @@ export async function logoutSession(userId) {
 /** Al borrar un usuario: corta y elimina su sesión. */
 export async function removeSession(userId) {
   await logoutSession(userId);
+  deleteContacts(userId);
   sessions.delete(userId);
 }
 
@@ -228,6 +247,19 @@ export function normalizePhone(raw) {
   }
   return d;
 }
+
+/** Busca en los contactos de WhatsApp del usuario. */
+export function findContacts(userId, q) {
+  const sock = getSession(userId).sock;
+  const resolveLid = sock?.signalRepository?.lidMapping
+    ? async (lid) => {
+        const pn = await sock.signalRepository.lidMapping.getPNForLID(lid);
+        return pn ? String(pn).split('@')[0].split(':')[0] : null;
+      }
+    : null;
+  return searchContacts(userId, q, resolveLid);
+}
+export { contactCount };
 
 const jidCache = new Map();
 
